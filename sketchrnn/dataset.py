@@ -1,7 +1,10 @@
 import math
 import numpy as np
+import tensorflow as tf
 
-# scale_factor = np.std(np.concatenate([d[:,:2] for d in data_train]))
+
+def cleanup(d, limit=1000):
+    return d.astype(np.float32).clip(-limit, limit)
 
 
 def calc_scale_factor(data):
@@ -50,21 +53,21 @@ def pad(data, seq_len):
     return res
 
 
-def preprocess(d, eps, prob):
+def preprocess(d, seq_len, eps, prob):
     d = random_scale(d, eps)
     d = augment(d, prob)
-    return pad(d)
+    return pad(d, seq_len)
 
 
 def data_gen(data, scale_factor):
     source = [normalize(d, scale_factor) for d in data]
 
-    def gen(batch_size, eps=0.15, prob=0.1):
+    def gen(batch_size, seq_len, eps=0.15, prob=0.1):
         n = len(source)
         num_batches = math.ceil(n // batch_size)
         for b in range(num_batches):
             indices = np.random.permutation(range(n))[:batch_size]
-            yield [preprocess(source[i], eps, prob) for i in indices]
+            yield [preprocess(source[i], seq_len, eps, prob) for i in indices]
 
     return gen
 
@@ -75,14 +78,24 @@ def split(x):
     return (enc_in, dec_in), target
 
 
-# train_dataset = tf.data.Dataset.from_generator(data_gen(data_train),
-#                                                output_types=tf.float32,
-#                                                output_shapes=(None, hps['max_seq_len']+1, 5),
-#                                                args=[hps['batch_size'], 0.15, 0.1])
-# train_dataset = train_dataset.map(split, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+def make_train_dataset(
+    data, seq_len, batch_size, scale_factor, random_scale_factor=0.1, augment_prob=0.1
+):
+    train_dataset = tf.data.Dataset.from_generator(
+        data_gen(data, scale_factor),
+        output_types=tf.float32,
+        output_shapes=(None, seq_len + 1, 5),
+        args=[batch_size, seq_len, random_scale_factor, augment_prob],
+    )
+    train_dataset = train_dataset.map(
+        split, num_parallel_calls=tf.data.experimental.AUTOTUNE
+    )
+    return train_dataset
 
-# val_dataset = tf.data.Dataset.from_tensor_slices([pad(normalize(d.astype('float32').clip(-1000,1000),scale_factor)) for d in data['valid']])
-# val_dataset = val_dataset.batch(hps['batch_size']).map(split)
 
-# ds_train = np.array([pad(normalize(d, scale_factor)) for d in data_train])
-# ds_test = np.array([pad(normalize(d, scale_factor)) for d in data_test])
+def make_val_dataset(data, seq_len, batch_size, scale_factor):
+    val_dataset = tf.data.Dataset.from_tensor_slices(
+        [pad(normalize(d, scale_factor), seq_len) for d in data]
+    )
+    val_dataset = val_dataset.batch(batch_size).map(split)
+    return val_dataset

@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras as K
@@ -10,7 +11,7 @@ class SketchRNN(object):
         self.models["encoder"] = self._build_encoder()
         self.models["initial_state"] = self._build_initial_state()
         self.models["decoder"] = self._build_decoder()
-        self.models["sketchrnn"] = self._build_model()
+        self.models["full"] = self._build_model()
 
     def _build_encoder(self):
         hps = self.hps
@@ -107,14 +108,148 @@ class SketchRNN(object):
         output, _, _ = self.models["decoder"]([decoder_input, z_out, init_h, init_c])
 
         return K.Model(
-            [encoder_input, decoder_input],
-            [output, mu_out, sigma_out],
+            inputs=[encoder_input, decoder_input],
+            outputs=[output, mu_out, sigma_out],
             name="sketchrnn",
         )
 
     def load_weights(self, path):
-        self.models["sketchrnn"].load_weights(path)
+        self.models["full"].load_weights(path)
         print("Loaded Weights From: {}".format(path))
+
+    def sample(self, temperature=1.0, greedy=False, z=None):
+        seq_len = self.hps["max_seq_len"]
+        if z is None:
+            z = np.random.randn(1, self.hps["z_size"]).astype("float32")
+
+        prev_x = np.array([0, 0, 1, 0, 0], dtype=np.float32)
+        cell_h, cell_c = self.models["initial_state"](z)
+
+        strokes = np.zeros((seq_len, 5), dtype=np.float32)
+
+        for i in range(seq_len):
+            outouts, cell_h, cell_c = self.models["decoder"](
+                [prev_x.reshape((1, 1, 5)), z, cell_h, cell_c]
+            )
+
+            o_pi, o_mu1, o_mu2, o_sigma1, o_sigma2, o_corr, o_pen = get_mixture_coef(
+                outouts
+            )
+
+            idx = get_pi_idx(o_pi[0, 0], temperature, greedy)
+            idx_eos = get_pi_idx(o_pen[0, 0], temperature, greedy)
+
+            next_x1, next_x2 = sample_gaussian_2d(
+                o_mu1[0, 0, idx],
+                o_mu2[0, 0, idx],
+                o_sigma1[0, 0, idx],
+                o_sigma2[0, 0, idx],
+                o_corr[0, 0, idx],
+                np.sqrt(temperature),
+                greedy,
+            )
+
+            strokes[i] = [next_x1, next_x2, 0, 0, 0]
+            strokes[i, idx_eos + 2] = 1
+
+            prev_x = strokes[i]
+
+        return strokes
+
+    def train(self, initial_epoch, train_dataset, val_dataset, checkpoint, log_every=100):
+        hps = self.hps
+        model = self.models["full"]
+        optimizer = K.optimizers.Adam(
+            learning_rate=hps["learning_rate"], clipvalue=hps["grad_clip"]
+        )
+        metrics = {
+            n: K.metrics.Mean(n, dtype=tf.float32) for n in ["recon", "kl", "cost"]
+        }
+
+        kl_weight = K.backend.variable(hps["kl_weight_start"], name="kl_weight")
+
+        step = initial_epoch * hps["num_batches"]
+
+        @tf.function
+        def train_step(inputs, target):
+            with tf.GradientTape() as tape:
+                outputs, mu, sigma = model(inputs)
+                md_loss = calculate_md_loss(target, outputs)
+                kl_loss = calculate_kl_loss(mu, sigma, hps["kl_tolerance"])
+                total_loss = md_loss + kl_loss * kl_weight
+
+            grads = tape.gradient(total_loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(grads, model.trainable_variables))
+            return md_loss, kl_loss, total_loss
+
+        for epoch in range(initial_epoch + 1, hps["epochs"] + 1):
+            start = time.time()
+
+            K.backend.set_learning_phase(1)
+            for batch, (inputs, target) in enumerate(train_dataset, 1):
+                step += 1
+
+                ## Update learning rate
+                lr = (hps["learning_rate"] - hps["min_learning_rate"]) * hps[
+                    "decay_rate"
+                ] ** step + hps["min_learning_rate"]
+                K.backend.set_value(optimizer.lr, K.backend.get_value(lr))
+
+                ## update kl weight
+                klw = (
+                    hps["kl_weight"]
+                    - (hps["kl_weight"] - hps["kl_weight_start"])
+                    * hps["kl_decay_rate"] ** step
+                )
+                K.backend.set_value(kl_weight, K.backend.get_value(klw))
+
+                md_loss, kl_loss, total_loss = train_step(inputs, target)
+
+                if batch % log_every == 0:
+                    msg = (
+                        "[train] epoch: {}/{}, batch: {}, recon: {:.4f}, "
+                        "kl: {:.4f}, cost: {:.4f}, lr: {:.6f}, klw: {:.4f}, time: {:.2f}"
+                    )
+                    print(
+                        msg.format(
+                            epoch,
+                            hps["epochs"],
+                            batch,
+                            md_loss.numpy(),
+                            kl_loss.numpy(),
+                            total_loss.numpy(),
+                            optimizer.learning_rate.numpy(),
+                            kl_weight.numpy(),
+                            time.time() - start,
+                        )
+                    )
+                    start = time.time()
+
+            K.backend.set_learning_phase(0)
+            for inputs, target in val_dataset:
+                outputs, mu, sigma = model(inputs)
+                md_loss = calculate_md_loss(target, outputs)
+                kl_loss = calculate_kl_loss(mu, sigma)
+                total_loss = md_loss + kl_loss * kl_weight
+
+                metrics["recon"](md_loss)
+                metrics["kl"](kl_loss)
+                metrics["cost"](total_loss)
+
+            print(
+                "[validate] epoch: {}/{}, recon: {:.4f}, kl: {:.4f}, cost: {:.4f}".format(
+                    epoch,
+                    hps["epochs"],
+                    metrics["recon"].result(),
+                    metrics["kl"].result(),
+                    metrics["cost"].result(),
+                )
+            )
+
+            model.save_weights(checkpoint.format(epoch, metrics["cost"].result()))
+
+            for metric in metrics.values():
+                metric.reset_states()
 
 
 def get_mixture_coef(out_tensor):
@@ -153,6 +288,13 @@ def keras_2d_normal(x1, x2, mu1, mu2, s1, s2, rho):
     return result
 
 
+def calculate_kl_loss(mu, sigma, kl_tolerance):
+    kl_cost = -0.5 * K.backend.mean(
+        1 + sigma - K.backend.square(mu) - K.backend.exp(sigma)
+    )
+    return K.backend.maximum(kl_cost, kl_tolerance)
+
+
 def calculate_md_loss(y_true, y_pred):
     o_pi, o_mu1, o_mu2, o_sigma1, o_sigma2, o_corr, o_pen = get_mixture_coef(y_pred)
 
@@ -180,10 +322,7 @@ def calculate_md_loss(y_true, y_pred):
 
     result = gmm_loss + pen_loss
 
-    r_cost = K.backend.mean(
-        result
-    )  # todo: Keras already averages over all tensor values, this might be redundant
-    return r_cost
+    return K.backend.mean(result)
 
 
 def adjust_temp(pi_pdf, temp):
@@ -212,42 +351,3 @@ def sample_gaussian_2d(mu1, mu2, s1, s2, rho, temp=1.0, greedy=False):
     x = np.random.multivariate_normal(mean, cov, 1)
     return x[0]
 
-
-def sample(sketchrnn, temperature=1.0, greedy=False, z=None):
-    seq_len = sketchrnn.hps["max_seq_len"]
-    if z is None:
-        z = np.random.randn(1, sketchrnn.hps["z_size"]).astype("float32")
-
-    prev_x = np.array([0, 0, 1, 0, 0], dtype=np.float32)
-    cell_h, cell_c = sketchrnn.models["initial_state"](z)
-
-    strokes = np.zeros((seq_len, 5), dtype=np.float32)
-
-    for i in range(seq_len):
-        outouts, cell_h, cell_c = sketchrnn.models["decoder"](
-            [prev_x.reshape((1, 1, 5)), z, cell_h, cell_c]
-        )
-
-        o_pi, o_mu1, o_mu2, o_sigma1, o_sigma2, o_corr, o_pen = get_mixture_coef(
-            outouts
-        )
-
-        idx = get_pi_idx(o_pi[0, 0], temperature, greedy)
-        idx_eos = get_pi_idx(o_pen[0, 0], temperature, greedy)
-
-        next_x1, next_x2 = sample_gaussian_2d(
-            o_mu1[0, 0, idx],
-            o_mu2[0, 0, idx],
-            o_sigma1[0, 0, idx],
-            o_sigma2[0, 0, idx],
-            o_corr[0, 0, idx],
-            np.sqrt(temperature),
-            greedy,
-        )
-
-        strokes[i] = [next_x1, next_x2, 0, 0, 0]
-        strokes[i, idx_eos + 2] = 1
-
-        prev_x = strokes[i]
-
-    return strokes
