@@ -156,7 +156,9 @@ class SketchRNN(object):
 
         return strokes
 
-    def train(self, initial_epoch, train_dataset, val_dataset, checkpoint, log_every=100):
+    def train(
+        self, initial_epoch, train_dataset, val_dataset, checkpoint, log_every=100
+    ):
         hps = self.hps
         model = self.models["full"]
         optimizer = K.optimizers.Adam(
@@ -229,7 +231,7 @@ class SketchRNN(object):
             for inputs, target in val_dataset:
                 outputs, mu, sigma = model(inputs)
                 md_loss = calculate_md_loss(target, outputs)
-                kl_loss = calculate_kl_loss(mu, sigma)
+                kl_loss = calculate_kl_loss(mu, sigma, hps["kl_tolerance"])
                 total_loss = md_loss + kl_loss * kl_weight
 
                 metrics["recon"](md_loss)
