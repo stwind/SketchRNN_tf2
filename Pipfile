@@ -1,0 +1,27 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+pylint = "*"
+pytest = "*"
+rope = "*"
+black = "*"
+
+[packages]
+requests = "*"
+numpy = "*"
+scipy = "*"
+matplotlib = "*"
+scikit-learn = "*"
+seaborn = "*"
+jupyterlab = "*"
+pydot = "*"
+pillow = "*"
+tensorflow = "*"
+tqdm = "*"
+ipywidgets = "*"
+
+[requires]
+python_version = "3.7"
