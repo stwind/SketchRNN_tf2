@@ -176,7 +176,7 @@ class SketchRNN(object):
         def train_step(inputs, target):
             with tf.GradientTape() as tape:
                 outputs, mu, sigma = model(inputs)
-                md_loss = calculate_md_loss(target, outputs)
+                md_loss = K.backend.mean(calculate_md_loss(target, outputs))
                 kl_loss = calculate_kl_loss(mu, sigma, hps["kl_tolerance"])
                 total_loss = md_loss + kl_loss * kl_weight
 
@@ -230,7 +230,7 @@ class SketchRNN(object):
             K.backend.set_learning_phase(0)
             for inputs, target in val_dataset:
                 outputs, mu, sigma = model(inputs)
-                md_loss = calculate_md_loss(target, outputs)
+                md_loss = K.backend.mean(calculate_md_loss(target, outputs))
                 kl_loss = calculate_kl_loss(mu, sigma, hps["kl_tolerance"])
                 total_loss = md_loss + kl_loss * kl_weight
 
@@ -324,7 +324,7 @@ def calculate_md_loss(y_true, y_pred):
 
     result = gmm_loss + pen_loss
 
-    return K.backend.mean(result)
+    return result
 
 
 def adjust_temp(pi_pdf, temp):
