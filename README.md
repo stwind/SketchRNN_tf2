@@ -52,7 +52,5 @@ See complete examples in the [usage.ipynb](notebooks/usage.ipynb).
 * [googlecreativelab/quickdraw-dataset](https://github.com/googlecreativelab/quickdraw-dataset) - The QuickDraw dataset
 * [magenta/models/sketch_rnn](https://github.com/tensorflow/magenta/tree/master/magenta/models/sketch_rnn) - Official Implementation
 * [hardmaru/sketch-rnn](https://github.com/hardmaru/sketch-rnn) - Original Implementation from the author of the paper @hardmaru
-
 * [eyalzk/sketch_rnn_keras](https://github.com/eyalzk/sketch_rnn_keras) - Implementation based on Keras by @eyalzk
-
 * [zzh8829/yolov3-tf2](https://github.com/zzh8829/yolov3-tf2) - Great source for some TF2 features in practice.
