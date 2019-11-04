@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import minmax_scale
 from IPython.display import clear_output
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
@@ -67,14 +68,25 @@ def update_progress(progress, bar_length=20):
 def make_mpl_path(strokes):
     vertices = strokes[:, :-1].cumsum(axis=0, dtype=np.float32) * -1
     if len(vertices) > 0:
-        vertices -= vertices.mean(0)
+        (minx, miny), (maxx, maxy) = vertices.min(0), vertices.max(0)
+        aspect = (maxx - minx) / (maxy - miny)
+
+        vertices = minmax_scale(vertices, (-1, 1), axis=0)
+
+        if aspect < 1:
+            vertices[:, 0] *= aspect
+        else:
+            vertices[:, 1] *= aspect
     codes = np.roll(Path.LINETO - strokes[:, -1], 1).astype(int)
     return Path(vertices, codes)
 
 
-def plot_strokes(ax, strokes):
-    patch = ax.add_patch(PathPatch(make_mpl_path(strokes), lw=1, ec="black", fc="none"))
-    ax.set(xticks=[], yticks=[], frame_on=False)
+def plot_strokes(ax, strokes, ec="black", no_ticks=True):
+    patch = ax.add_patch(PathPatch(make_mpl_path(strokes), lw=1, ec=ec, fc="none"))
+    if no_ticks:
+        ax.set(xticks=[], yticks=[], frame_on=False)
+    else:
+        ax.set(frame_on=False)
     ax.axis("equal")
     return patch
 
