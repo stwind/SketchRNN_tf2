@@ -76,7 +76,7 @@ def make_mpl_path(strokes):
 
         vertices = minmax_scale(vertices, (-1, 1), axis=0)
 
-        if aspect < 1:
+        if aspect > 1:
             vertices[:, 0] *= aspect
         else:
             vertices[:, 1] *= aspect
