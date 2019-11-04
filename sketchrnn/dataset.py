@@ -64,7 +64,7 @@ def data_gen(data, scale_factor):
 
     def gen(batch_size, seq_len, eps=0.15, prob=0.1):
         n = len(source)
-        num_batches = math.ceil(n // batch_size)
+        num_batches = math.ceil(n / batch_size)
         for b in range(num_batches):
             indices = np.random.permutation(range(n))[:batch_size]
             yield [preprocess(source[i], seq_len, eps, prob) for i in indices]
