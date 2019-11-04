@@ -33,15 +33,15 @@ See the [colab notebook](notebooks/train.ipynb) for an example train on the rabb
 
 Here are some results from a model trained on the rabbit dataset.
 
-![random samples](/Users/stwind/projects/SketchRNN_tf2/assets/random_samples.png)
+![random samples](assets/random_samples.png)
 
 
 
-![Interpolation](/Users/stwind/projects/SketchRNN_tf2/assets/interp.png)
+![Interpolation](assets/interp.png)
 
 
 
-![pca](/Users/stwind/projects/SketchRNN_tf2/assets/pca.png)
+![pca](assets/pca.png)
 
 See complete examples in the [usage.ipynb](notebooks/usage.ipynb).
 
