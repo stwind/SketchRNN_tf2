@@ -1,6 +1,9 @@
+import sys
+import os
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from urllib.request import urlretrieve
 from sklearn.preprocessing import minmax_scale
 from IPython.display import clear_output
 from matplotlib.path import Path
@@ -104,3 +107,20 @@ def slerp(p0, p1, t):
 
 def lerp(p0, p1, t):
     return (1.0 - t) * p0 + t * p1
+
+
+def report_progress(count, block, total):
+    sys.stdout.write("{} / {}\r".format(block * count, total))
+    sys.stdout.flush()
+
+
+def download_dataset(data_class, folder="."):
+    filename = "{}.npz".format(data_class)
+    path = os.path.join(folder, filename)
+    if not os.path.isfile(path):
+        url = "https://storage.googleapis.com/quickdraw_dataset/sketchrnn/{}".format(
+            filename
+        )
+        print("Downloading: {}".format(url))
+        urlretrieve(url, filename=path, reporthook=report_progress)
+    print("Downloaded: {}".format(path))
