@@ -72,14 +72,14 @@ def make_mpl_path(strokes):
     vertices = strokes[:, :-1].cumsum(axis=0, dtype=np.float32) * -1
     if len(vertices) > 0:
         (minx, miny), (maxx, maxy) = vertices.min(0), vertices.max(0)
-        aspect = (maxx - minx) / (maxy - miny)
+        aspect = (maxy - miny) / (maxx - minx)
 
         vertices = minmax_scale(vertices, (-1, 1), axis=0)
 
-        if aspect > 1:
-            vertices[:, 0] *= aspect
-        else:
+        if aspect < 1:
             vertices[:, 1] *= aspect
+        else:
+            vertices[:, 0] *= aspect
     codes = np.roll(Path.LINETO - strokes[:, -1], 1).astype(int)
     return Path(vertices, codes)
 
